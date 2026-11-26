@@ -12,7 +12,6 @@ from .config import (
     extract_roboflow_slug,
     is_valid_credential_val,
     load_app_env,
-    mask_secret,
     save_env_variable,
 )
 from .ui import (
@@ -165,7 +164,7 @@ def setup_roboflow_credentials(work_dir: Path | None = None) -> None:
     if project:
         save_env_variable("ROBOFLOW_PROJECT", project, work_dir=work_dir)
 
-    print_success(f"Roboflow credentials saved (Key: {mask_secret(api_key)}).")
+    print_success("Roboflow credentials saved.")
 
     if (
         api_key
@@ -222,7 +221,7 @@ def test_all_connections(work_dir: Path | None = None) -> None:
 
                 rf = Roboflow(api_key=rf_key)
                 rf.workspace(rf_ws).project(rf_proj)
-            print_success(f"Roboflow verified: '{rf_ws}/{rf_proj}' (Key: {mask_secret(rf_key)}).")
+            print_success(f"Roboflow verified: '{rf_ws}/{rf_proj}'.")
         except Exception as exc:
             print_error(f"Roboflow check failed: {exc}")
 

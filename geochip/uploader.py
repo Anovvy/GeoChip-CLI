@@ -13,7 +13,6 @@ from .config import (
     extract_roboflow_slug,
     is_valid_credential_val,
     load_app_env,
-    mask_secret,
     resolve_work_dir,
     save_env_variable,
 )
@@ -49,7 +48,7 @@ def save_credentials_to_env(
     save_env_variable("ROBOFLOW_API_KEY", api_key, work_dir=work_dir)
     save_env_variable("ROBOFLOW_WORKSPACE", workspace_id, work_dir=work_dir)
     save_env_variable("ROBOFLOW_PROJECT", project_id, work_dir=work_dir)
-    print_success(f"Roboflow credentials saved (Key: {mask_secret(api_key)}).")
+    print_success("Roboflow credentials saved.")
 
 
 def upload_chips_to_roboflow(

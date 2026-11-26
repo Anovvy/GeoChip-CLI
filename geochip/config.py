@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -52,8 +53,8 @@ def extract_roboflow_slug(val: str | None) -> str:
     if not val:
         return ""
     cleaned = str(val).strip().rstrip("/")
-    if "roboflow.com/" in cleaned:
-        cleaned = cleaned.split("roboflow.com/")[-1]
+    if "://" in cleaned:
+        cleaned = urlparse(cleaned).path.strip("/")
     if "/" in cleaned:
         cleaned = cleaned.split("/")[-1]
     return cleaned.strip()

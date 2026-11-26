@@ -13,8 +13,6 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from .config import mask_secret
-
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -304,11 +302,7 @@ def prompt_input(message: str, default: str | None = None, validator=None) -> st
 
 def prompt_secret(message: str, existing_value: str | None = None) -> str:
     """Prompt for a secret without echoing it or leaking raw existing values."""
-    hint = (
-        f" {DIM}(press Enter to keep {mask_secret(existing_value)}){RESET}"
-        if existing_value
-        else ""
-    )
+    hint = f" {DIM}(press Enter to keep existing key){RESET}" if existing_value else ""
     prompt_str = f"{BOLD}{CYAN}? {message}{hint}: {RESET}"
 
     while True:
