@@ -123,7 +123,9 @@ def create_single_raster_chips(
     total_grid = n_rows * n_cols
 
     if total_grid == 0:
-        print_error(f"Raster dimensions ({w}x{h} px) are smaller than chip size ({chip_size}x{chip_size} px).")
+        print_error(
+            f"Raster dimensions ({w}x{h} px) are smaller than chip size ({chip_size}x{chip_size} px)."
+        )
         return None, 0
 
     print_info(f"Tiling grid: {n_rows} rows x {n_cols} cols ({total_grid} potential chips)")
@@ -156,8 +158,8 @@ def create_single_raster_chips(
             chip_filepath = task_dir / chip_filename
             Image.fromarray(chip_crop).save(str(chip_filepath), optimize=True)
 
-            x0, y0 = transform * (c_start, r_start)
-            x1, y1 = transform * (c_end, r_end)
+            x0, y0 = transform @ (c_start, r_start)
+            x1, y1 = transform @ (c_end, r_end)
             left, right = min(x0, x1), max(x0, x1)
             bottom, top = min(y0, y1), max(y0, y1)
 
@@ -216,7 +218,9 @@ def interactive_chipping_workflow(
         raw_files = list_available_raw_rasters(dirs["raw"])
         if not raw_files:
             print_error(f"No GeoTIFF rasters (.tif) found in '{dirs['raw']}'.")
-            print_info("Run Step 1 (Download Satellite Imagery) first, or place a .tif file in data/raw/.")
+            print_info(
+                "Run Step 1 (Download Satellite Imagery) first, or place a .tif file in data/raw/."
+            )
             return
 
         raster_choices = [

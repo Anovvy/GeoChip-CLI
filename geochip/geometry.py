@@ -52,7 +52,11 @@ def _find_prj_file(shp_path: Path) -> Path | None:
         return direct
     stem_lower = shp_path.stem.lower()
     for sibling in shp_path.parent.iterdir():
-        if sibling.is_file() and sibling.stem.lower() == stem_lower and sibling.suffix.lower() == ".prj":
+        if (
+            sibling.is_file()
+            and sibling.stem.lower() == stem_lower
+            and sibling.suffix.lower() == ".prj"
+        ):
             return sibling
     return None
 
@@ -117,6 +121,16 @@ def _split_shapefile_parts(shape: Any) -> list[list[list[float]]]:
     return rings
 
 
+def _is_wgs84_geographic(crs: CRS) -> bool:
+    """Return True if the CRS is already geographic WGS84 (including ESRI WKT1)."""
+    if not crs.is_geographic:
+        return False
+    if crs.equals(WGS84_CRS) or crs.to_epsg() == 4326:
+        return True
+    name_upper = (crs.name or "").upper()
+    return "WGS 84" in name_upper or "WGS_1984" in name_upper
+
+
 def _load_shapefile_aoi(shp_path: Path) -> AOIData:
     """Load an ESRI Shapefile and reproject it to WGS84 if its .prj uses another CRS."""
     import shapefile
@@ -136,7 +150,7 @@ def _load_shapefile_aoi(shp_path: Path) -> AOIData:
             raise ValueError(f"Projection file '{prj_path.name}' is empty.")
         src_crs = CRS.from_wkt(wkt_text)
         source_crs = src_crs.name or str(src_crs)
-        if not src_crs.equals(WGS84_CRS):
+        if not _is_wgs84_geographic(src_crs):
             transformer = Transformer.from_crs(src_crs, WGS84_CRS, always_xy=True)
             reprojected = True
     else:
@@ -201,7 +215,9 @@ def _extract_geojson_polygons(geometry: dict[str, Any]) -> list[list[list[list[f
                 polys.append(rings)
         return polys
 
-    raise ValueError(f"Unsupported GeoJSON geometry type '{geom_type}'. Expected Polygon or MultiPolygon.")
+    raise ValueError(
+        f"Unsupported GeoJSON geometry type '{geom_type}'. Expected Polygon or MultiPolygon."
+    )
 
 
 def _load_geojson_aoi(geojson_path: Path) -> AOIData:
@@ -258,7 +274,9 @@ def load_aoi_data(aoi_path: str | Path) -> AOIData:
     )
 
 
-def estimate_download_size_mb(bbox: list[float], scale_m: float, bands: int = 3) -> tuple[int, int, float]:
+def estimate_download_size_mb(
+    bbox: list[float], scale_m: float, bands: int = 3
+) -> tuple[int, int, float]:
     """Estimate exported UInt8 GeoTIFF pixel dimensions and uncompressed size in MB."""
     min_lon, min_lat, max_lon, max_lat = bbox
     mid_lat = (min_lat + max_lat) / 2.0
