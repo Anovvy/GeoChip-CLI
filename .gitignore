@@ -43,6 +43,11 @@ build/
 dist/
 *.egg-info/
 
+# Test & Coverage Artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
 # IDEs & System Files
 .idea/
 .vscode/
@@ -52,6 +57,5 @@ dist/
 Thumbs.db
 desktop.ini
 
-# AI Agent Instructions
-AGENTS.md
+# Local agent scratch directory (AGENTS.md itself IS tracked in GitHub)
 .agents/
