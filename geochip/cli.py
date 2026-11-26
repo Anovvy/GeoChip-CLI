@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .auth import get_connection_status, interactive_auth_menu, login_flow, setup_roboflow_credentials
+from .auth import (
+    get_connection_status,
+    interactive_auth_menu,
+    login_flow,
+    setup_roboflow_credentials,
+)
 from .config import ensure_workspace_dirs, load_app_env, resolve_work_dir
 from .downloader import interactive_download_workflow
 from .tiler import create_single_raster_chips, interactive_chipping_workflow
@@ -130,15 +135,27 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     auth_parser = subparsers.add_parser("auth", help="Manage Earth Engine and Roboflow credentials")
-    auth_parser.add_argument("--login", action="store_true", help="Launch browser OAuth login for Earth Engine")
+    auth_parser.add_argument(
+        "--login", action="store_true", help="Launch browser OAuth login for Earth Engine"
+    )
     auth_parser.add_argument("--project", type=str, default=None, help="Google Cloud Project ID")
-    auth_parser.add_argument("--roboflow", action="store_true", help="Configure Roboflow credentials")
+    auth_parser.add_argument(
+        "--roboflow", action="store_true", help="Configure Roboflow credentials"
+    )
 
-    dl_parser = subparsers.add_parser("download", help="Download satellite rasters from Google Earth Engine")
-    dl_parser.add_argument("--interactive", action="store_true", help="Launch interactive download UI")
+    dl_parser = subparsers.add_parser(
+        "download", help="Download satellite rasters from Google Earth Engine"
+    )
+    dl_parser.add_argument(
+        "--interactive", action="store_true", help="Launch interactive download UI"
+    )
 
-    chip_parser = subparsers.add_parser("chip", help="Slice GeoTIFF raster into chip tiles & manifest.json")
-    chip_parser.add_argument("--raster", type=str, default=None, help="Path to input GeoTIFF raster")
+    chip_parser = subparsers.add_parser(
+        "chip", help="Slice GeoTIFF raster into chip tiles & manifest.json"
+    )
+    chip_parser.add_argument(
+        "--raster", type=str, default=None, help="Path to input GeoTIFF raster"
+    )
     chip_parser.add_argument(
         "--chip-size",
         type=int,
@@ -146,13 +163,21 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[160, 320, 640, 1280],
         help="Chip tile size in pixels",
     )
-    chip_parser.add_argument("--chips-per-task", type=int, default=5, help="Number of chips per task batch")
-    chip_parser.add_argument("--output-dir", type=str, default=None, help="Output base directory for chips")
+    chip_parser.add_argument(
+        "--chips-per-task", type=int, default=5, help="Number of chips per task batch"
+    )
+    chip_parser.add_argument(
+        "--output-dir", type=str, default=None, help="Output base directory for chips"
+    )
 
     upload_parser = subparsers.add_parser("upload", help="Upload task batches to Roboflow")
-    upload_parser.add_argument("--chips-dir", type=str, default=None, help="Directory containing chip tasks")
+    upload_parser.add_argument(
+        "--chips-dir", type=str, default=None, help="Directory containing chip tasks"
+    )
     upload_parser.add_argument("--api-key", type=str, default=None, help="Roboflow Private API Key")
-    upload_parser.add_argument("--workspace", type=str, default=None, help="Roboflow Workspace Slug")
+    upload_parser.add_argument(
+        "--workspace", type=str, default=None, help="Roboflow Workspace Slug"
+    )
     upload_parser.add_argument("--project", type=str, default=None, help="Roboflow Project ID")
     upload_parser.add_argument("--task", type=str, default="all", help="Task folder name or 'all'")
 

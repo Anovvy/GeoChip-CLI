@@ -169,9 +169,13 @@ async def run_review_with_fallback(
             err_summary = f"{model_id}: {type(exc).__name__}: {exc}"
             errors.append(err_summary)
             if is_retryable_model_error(exc):
-                print(f"[AGY DevOps Reviewer] Model '{model_id}' unavailable/rate-limited; switching to next model...")
+                print(
+                    f"[AGY DevOps Reviewer] Model '{model_id}' unavailable/rate-limited; switching to next model..."
+                )
                 continue
-            print(f"[AGY DevOps Reviewer] Model '{model_id}' failed ({exc}); switching to next model...")
+            print(
+                f"[AGY DevOps Reviewer] Model '{model_id}' failed ({exc}); switching to next model..."
+            )
             continue
 
     raise RuntimeError("All Gemini fallback models failed:\n- " + "\n- ".join(errors))
@@ -252,11 +256,16 @@ def main() -> int:
     pr_raw = os.getenv("PR_NUMBER", "").strip()
 
     if not api_key:
-        print("[AGY DevOps Reviewer] GEMINI_API_KEY secret is not configured. Skipping AI PR review.")
+        print(
+            "[AGY DevOps Reviewer] GEMINI_API_KEY secret is not configured. Skipping AI PR review."
+        )
         return 0
 
     if not (token and repo and pr_raw):
-        print("[AGY DevOps Reviewer] Missing GITHUB_TOKEN, GITHUB_REPOSITORY, or PR_NUMBER.", file=sys.stderr)
+        print(
+            "[AGY DevOps Reviewer] Missing GITHUB_TOKEN, GITHUB_REPOSITORY, or PR_NUMBER.",
+            file=sys.stderr,
+        )
         return 1
 
     pr_number = int(pr_raw)

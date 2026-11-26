@@ -48,7 +48,9 @@ def validate_date_range(start_date: str, end_date: str) -> tuple[bool, str]:
     ok_end, err_end = validate_date_str(end_date)
     if not ok_end:
         return False, err_end
-    if datetime.date.fromisoformat(start_date.strip()) > datetime.date.fromisoformat(end_date.strip()):
+    if datetime.date.fromisoformat(start_date.strip()) > datetime.date.fromisoformat(
+        end_date.strip()
+    ):
         return False, "End date must be on or after start date."
     return True, ""
 
@@ -110,11 +112,7 @@ def fetch_scenes_list(
             }
         ]
 
-    col = (
-        ee.ImageCollection(collection_id)
-        .filterBounds(aoi_geom)
-        .filterDate(start_date, end_date)
-    )
+    col = ee.ImageCollection(collection_id).filterBounds(aoi_geom).filterDate(start_date, end_date)
 
     if cloud_prop:
         col = col.filter(ee.Filter.lte(cloud_prop, max_cloud))
@@ -170,9 +168,7 @@ def build_composite_image(col, dataset_key: str, comp_method: str, cloud_prop: s
 
     if comp_method == "q25":
         return (
-            masked_col.select(target_bands)
-            .reduce(ee.Reducer.percentile([25]))
-            .rename(target_bands)
+            masked_col.select(target_bands).reduce(ee.Reducer.percentile([25])).rename(target_bands)
         )
     if comp_method == "mean":
         return masked_col.mean()
@@ -328,7 +324,9 @@ def interactive_download_workflow(work_dir: Path | None = None) -> str | None:
                 }
             )
 
-        choice_idx = select("Select Ingestion Mode (Single Scene or Full Composite):", menu_choices, default_index=0)
+        choice_idx = select(
+            "Select Ingestion Mode (Single Scene or Full Composite):", menu_choices, default_index=0
+        )
         chosen_item = menu_choices[choice_idx]
 
         if chosen_item["action"] == "composite":
@@ -345,14 +343,18 @@ def interactive_download_workflow(work_dir: Path | None = None) -> str | None:
                 comp_method=comp_method,
                 cloud_prop=ds_info["cloud_prop"],
             )
-            output_filename = f"{dataset_key}_{aoi_data.name}_{start_date}_{end_date}_{comp_method}.tif"
+            output_filename = (
+                f"{dataset_key}_{aoi_data.name}_{start_date}_{end_date}_{comp_method}.tif"
+            )
         else:
             chosen_scene = chosen_item["scene"]
             scene_id = chosen_scene["id"]
             print_info(f"Processing single scene: {scene_id}...")
             final_img = mask_clouds(ee.Image(scene_id), dataset_key)
             date_clean = chosen_scene["date"].split(" ")[0].replace("-", "")
-            output_filename = f"{dataset_key}_{aoi_data.name}_{date_clean}_{chosen_scene['short_id']}.tif"
+            output_filename = (
+                f"{dataset_key}_{aoi_data.name}_{date_clean}_{chosen_scene['short_id']}.tif"
+            )
 
     output_path = out_dir / output_filename
 
@@ -365,7 +367,9 @@ def interactive_download_workflow(work_dir: Path | None = None) -> str | None:
         print_warning(
             f"Estimated size ({est_mb:.1f} MB) is close to Earth Engine's ~48 MB direct download limit."
         )
-        if prompt_confirm("Increase pixel scale (meters/px) to avoid download errors?", default=True):
+        if prompt_confirm(
+            "Increase pixel scale (meters/px) to avoid download errors?", default=True
+        ):
             export_scale = prompt_number(
                 "Enter export scale in meters/pixel",
                 default=max(export_scale * 2, 20),
@@ -390,7 +394,9 @@ def interactive_download_workflow(work_dir: Path | None = None) -> str | None:
             )
     except Exception as exc:
         print_error(f"Failed to generate download URL from Earth Engine: {exc}")
-        print_warning("The requested raster may exceed the 48 MB direct download limit. Try a smaller AOI or larger scale.")
+        print_warning(
+            "The requested raster may exceed the 48 MB direct download limit. Try a smaller AOI or larger scale."
+        )
         return None
 
     print_info(f"Saving file to: {output_path}")

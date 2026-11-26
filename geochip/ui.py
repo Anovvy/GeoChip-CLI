@@ -72,10 +72,18 @@ def print_banner() -> None:
 
 def print_status_bar(gee_ready: bool, roboflow_ready: bool, work_dir: Path) -> None:
     """Display connection readiness and active workspace path."""
-    gee_badge = f"{BRIGHT_GREEN}Ready{RESET}" if gee_ready else f"{BRIGHT_YELLOW}Setup Required{RESET}"
-    rf_badge = f"{BRIGHT_GREEN}Ready{RESET}" if roboflow_ready else f"{DIM}Optional (Not Configured){RESET}"
+    gee_badge = (
+        f"{BRIGHT_GREEN}Ready{RESET}" if gee_ready else f"{BRIGHT_YELLOW}Setup Required{RESET}"
+    )
+    rf_badge = (
+        f"{BRIGHT_GREEN}Ready{RESET}"
+        if roboflow_ready
+        else f"{DIM}Optional (Not Configured){RESET}"
+    )
     print(f"  {DIM}Workspace:{RESET} {work_dir}")
-    print(f"  {DIM}Earth Engine:{RESET} {gee_badge}  {DIM}|{RESET}  {DIM}Roboflow:{RESET} {rf_badge}\n")
+    print(
+        f"  {DIM}Earth Engine:{RESET} {gee_badge}  {DIM}|{RESET}  {DIM}Roboflow:{RESET} {rf_badge}\n"
+    )
 
 
 @contextmanager
@@ -247,7 +255,9 @@ def select(
             elif key == "ENTER":
                 clear_lines(lines_to_clear)
                 chosen = choices[current_idx]
-                chosen_label = chosen if isinstance(chosen, str) else chosen.get("name", str(chosen))
+                chosen_label = (
+                    chosen if isinstance(chosen, str) else chosen.get("name", str(chosen))
+                )
                 print(f"  {BRIGHT_GREEN}✔ Selected: {BOLD}{chosen_label}{RESET}")
                 return current_idx
             elif key.isdigit():
@@ -256,7 +266,9 @@ def select(
                     current_idx = digit
                     clear_lines(lines_to_clear)
                     chosen = choices[current_idx]
-                    chosen_label = chosen if isinstance(chosen, str) else chosen.get("name", str(chosen))
+                    chosen_label = (
+                        chosen if isinstance(chosen, str) else chosen.get("name", str(chosen))
+                    )
                     print(f"  {BRIGHT_GREEN}✔ Selected: {BOLD}{chosen_label}{RESET}")
                     return current_idx
                 clear_lines(lines_to_clear)
@@ -292,7 +304,11 @@ def prompt_input(message: str, default: str | None = None, validator=None) -> st
 
 def prompt_secret(message: str, existing_value: str | None = None) -> str:
     """Prompt for a secret without echoing it or leaking raw existing values."""
-    hint = f" {DIM}(press Enter to keep {mask_secret(existing_value)}){RESET}" if existing_value else ""
+    hint = (
+        f" {DIM}(press Enter to keep {mask_secret(existing_value)}){RESET}"
+        if existing_value
+        else ""
+    )
     prompt_str = f"{BOLD}{CYAN}? {message}{hint}: {RESET}"
 
     while True:
@@ -328,7 +344,9 @@ def prompt_number(
         except ValueError:
             return False, "Input must be a valid number"
 
-    raw = prompt_input(message, default=str(default) if default is not None else None, validator=validator)
+    raw = prompt_input(
+        message, default=str(default) if default is not None else None, validator=validator
+    )
     return float(raw) if is_float else int(raw)
 
 

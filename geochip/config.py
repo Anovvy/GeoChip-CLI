@@ -6,6 +6,7 @@ secret masking, and Roboflow slug parsing.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -29,7 +30,11 @@ def is_valid_credential_val(val: str | None) -> bool:
     if not val:
         return False
     val_clean = str(val).strip().lower()
-    return bool(val_clean) and val_clean not in DUMMY_PLACEHOLDERS and not val_clean.startswith("your_")
+    return (
+        bool(val_clean)
+        and val_clean not in DUMMY_PLACEHOLDERS
+        and not val_clean.startswith("your_")
+    )
 
 
 def mask_secret(secret: str | None) -> str:
@@ -102,10 +107,8 @@ def save_env_variable(key: str, value: str, work_dir: Path | None = None) -> Pat
         lines.append(f"{key}={value}")
         env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
         if os.name != "nt":
-            try:
+            with contextlib.suppress(OSError):
                 env_file.chmod(0o600)
-            except OSError:
-                pass
 
     os.environ[key] = str(value)
     return GLOBAL_ENV_FILE

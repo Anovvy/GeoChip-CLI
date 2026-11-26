@@ -86,7 +86,9 @@ def upload_chips_to_roboflow(
         return False
 
     if task_name == "all":
-        task_folders = sorted([f for f in chips_path.iterdir() if f.is_dir() and f.name.startswith("task")])
+        task_folders = sorted(
+            [f for f in chips_path.iterdir() if f.is_dir() and f.name.startswith("task")]
+        )
     else:
         target_folder = chips_path / task_name
         if not target_folder.exists():
@@ -125,7 +127,9 @@ def upload_chips_to_roboflow(
                 else:
                     print(f"      [ERROR] Failed to upload {img_path.name}: {err_msg}")
 
-    print_success(f"\nUpload complete! Uploaded {total_uploaded} image(s) (Skipped: {total_skipped}).")
+    print_success(
+        f"\nUpload complete! Uploaded {total_uploaded} image(s) (Skipped: {total_skipped})."
+    )
     print_info(f"Annotate at: https://app.roboflow.com/{workspace_id}/{project_id}/annotate")
     return True
 
@@ -182,7 +186,9 @@ def interactive_upload_flow(
     t_idx = select("Select Upload Scope:", task_options)
 
     if task_options[t_idx]["action"] == "specific":
-        sub_tasks = sorted([f.name for f in chips_dir.iterdir() if f.is_dir() and f.name.startswith("task")])
+        sub_tasks = sorted(
+            [f.name for f in chips_dir.iterdir() if f.is_dir() and f.name.startswith("task")]
+        )
         if not sub_tasks:
             print_error(f"No task subfolders found in '{chips_dir}'.")
             return

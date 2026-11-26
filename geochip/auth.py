@@ -114,8 +114,12 @@ def login_flow(project_id: str | None = None, work_dir: Path | None = None) -> b
         err_str = str(exc).lower()
         if "not registered" in err_str and project_id:
             print_warning(f"\nProject '{project_id}' is not registered for Earth Engine yet:")
-            print_info(f"  1. Open: https://console.cloud.google.com/earth-engine/configuration?project={project_id}")
-            print_info("  2. Select 'Unpaid / Noncommercial' (or your appropriate tier) and confirm.")
+            print_info(
+                f"  1. Open: https://console.cloud.google.com/earth-engine/configuration?project={project_id}"
+            )
+            print_info(
+                "  2. Select 'Unpaid / Noncommercial' (or your appropriate tier) and confirm."
+            )
         else:
             print_info(
                 f"Verify Earth Engine API is enabled: "
@@ -163,14 +167,21 @@ def setup_roboflow_credentials(work_dir: Path | None = None) -> None:
 
     print_success(f"Roboflow credentials saved (Key: {mask_secret(api_key)}).")
 
-    if api_key and workspace and project and prompt_confirm("Test Roboflow connection now?", default=True):
+    if (
+        api_key
+        and workspace
+        and project
+        and prompt_confirm("Test Roboflow connection now?", default=True)
+    ):
         try:
             with spinner("Connecting to Roboflow..."):
                 from roboflow import Roboflow
 
                 rf = Roboflow(api_key=api_key)
                 proj_obj = rf.workspace(workspace).project(project)
-            print_success(f"Connected to Roboflow project '{workspace}/{project}' ({proj_obj.name}).")
+            print_success(
+                f"Connected to Roboflow project '{workspace}/{project}' ({proj_obj.name})."
+            )
         except Exception as exc:
             print_error(f"Could not connect to Roboflow: {exc}")
             print_warning("Verify your API key and workspace/project slug.")
@@ -201,7 +212,9 @@ def test_all_connections(work_dir: Path | None = None) -> None:
     rf_proj = extract_roboflow_slug(os.getenv("ROBOFLOW_PROJECT", ""))
 
     if not (is_valid_credential_val(rf_key) and rf_ws and rf_proj):
-        print_warning("Roboflow credentials are not configured yet (optional for local-only chipping).")
+        print_warning(
+            "Roboflow credentials are not configured yet (optional for local-only chipping)."
+        )
     else:
         try:
             with spinner("Connecting to Roboflow..."):
