@@ -1,14 +1,20 @@
 """
-GeoChip Interactive CLI UI Module.
-Provides modern, interactive terminal UI selection (arrow keys, colors, formatting)
-similar to Antigravity and Claude Code CLI tools.
+GeoChip CLI Terminal UI Module.
+Provides arrow-key interactive menus, masked secret prompts, live spinners,
+and clean cross-platform ANSI formatting.
 """
 
-import os
-import sys
-import shutil
+from __future__ import annotations
 
-# ANSI Color Codes
+import getpass
+import os
+import shutil
+import sys
+from contextlib import contextmanager
+from pathlib import Path
+
+from .config import mask_secret
+
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -19,14 +25,12 @@ BRIGHT_GREEN = "\033[92m"
 YELLOW = "\033[33m"
 BRIGHT_YELLOW = "\033[93m"
 RED = "\033[31m"
-MAGENTA = "\033[35m"
 WHITE = "\033[97m"
-BG_CYAN = "\033[46m"
 BG_BLUE = "\033[44m"
 
 
-def enable_windows_ansi():
-    """Enable ANSI virtual terminal processing and UTF-8 encoding on Windows consoles."""
+def enable_windows_ansi() -> None:
+    """Enable ANSI virtual terminal processing and UTF-8 output on Windows."""
     if os.name == "nt":
         try:
             if hasattr(sys.stdout, "reconfigure"):
@@ -38,11 +42,12 @@ def enable_windows_ansi():
 
         try:
             import ctypes
+
             kernel32 = ctypes.windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            handle = kernel32.GetStdHandle(-11)
             mode = ctypes.c_ulong()
             kernel32.GetConsoleMode(handle, ctypes.byref(mode))
-            mode.value |= 0x0004  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            mode.value |= 0x0004
             kernel32.SetConsoleMode(handle, mode)
         except Exception:
             pass
@@ -51,41 +56,64 @@ def enable_windows_ansi():
 enable_windows_ansi()
 
 
-def print_banner():
-    """Display the GeoChip ASCII banner with rich gradient styling."""
+def print_banner() -> None:
+    """Display the GeoChip CLI ASCII hero banner without version numbers."""
     banner = f"""
-{BRIGHT_CYAN}  ██████╗ ███████╗ ██████╗  ██████╗██╗  ██╗██╗██████╗ 
- ██╔════╝ ██╔════╝██╔═══██╗██╔════╝██║  ██║██║██╔══██╗
- ██║  ███╗█████╗  ██║   ██║██║     ███████║██║██████╔╝
- ██║   ██║██╔══╝  ██║   ██║██║     ██╔══██║██║██╔═══╝ 
- ╚██████╔╝███████╗╚██████╔╝╚██████╗██║  ██║██║██║     
-  ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚═╝╚═╝     {RESET}
-  {BOLD}{WHITE}Geospatial Earth Observation Pipeline & Roboflow Ingestion{RESET}
-  {DIM}Interactive CLI Engine v2.0{RESET}
+{BRIGHT_CYAN}  ██████╗ ███████╗ ██████╗  ██████╗██╗  ██╗██╗██████╗      ██████╗██╗     ██╗
+ ██╔════╝ ██╔════╝██╔═══██╗██╔════╝██║  ██║██║██╔══██╗    ██╔════╝██║     ██║
+ ██║  ███╗█████╗  ██║   ██║██║     ███████║██║██████╔╝    ██║     ██║     ██║
+ ██║   ██║██╔══╝  ██║   ██║██║     ██╔══██║██║██╔═══╝     ██║     ██║     ██║
+ ╚██████╔╝███████╗╚██████╔╝╚██████╗██║  ██║██║██║         ╚██████╗███████╗██║
+  ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚═╝╚═╝          ╚═════╝╚══════╝╚═╝{RESET}
+  {BOLD}{WHITE}Satellite Imagery Ingestion, Chipping & Roboflow Pipeline{RESET}
 """
     print(banner)
 
 
-def clear_lines(n):
+def print_status_bar(gee_ready: bool, roboflow_ready: bool, work_dir: Path) -> None:
+    """Display connection readiness and active workspace path."""
+    gee_badge = f"{BRIGHT_GREEN}Ready{RESET}" if gee_ready else f"{BRIGHT_YELLOW}Setup Required{RESET}"
+    rf_badge = f"{BRIGHT_GREEN}Ready{RESET}" if roboflow_ready else f"{DIM}Optional (Not Configured){RESET}"
+    print(f"  {DIM}Workspace:{RESET} {work_dir}")
+    print(f"  {DIM}Earth Engine:{RESET} {gee_badge}  {DIM}|{RESET}  {DIM}Roboflow:{RESET} {rf_badge}\n")
+
+
+@contextmanager
+def spinner(message: str):
+    """Display a live spinner during long-running network or Earth Engine calls."""
+    if not sys.stdout.isatty():
+        print_info(message)
+        yield
+        return
+
+    from rich.console import Console
+
+    console = Console()
+    with console.status(f"[cyan]{message}[/cyan]", spinner="dots"):
+        yield
+
+
+def clear_lines(n: int) -> None:
     """Clear n terminal lines upwards."""
     for _ in range(n):
         sys.stdout.write("\033[F\033[K")
     sys.stdout.flush()
 
 
-def _get_key_windows():
+def _get_key_windows() -> str:
     """Read a keypress on Windows via msvcrt."""
     import msvcrt
+
     ch = msvcrt.getch()
-    if ch in (b"\x00", b"\xe0"):  # Special key prefix
+    if ch in (b"\x00", b"\xe0"):
         ch2 = msvcrt.getch()
         if ch2 == b"H":
             return "UP"
-        elif ch2 == b"P":
+        if ch2 == b"P":
             return "DOWN"
-        elif ch2 == b"K":
+        if ch2 == b"K":
             return "LEFT"
-        elif ch2 == b"M":
+        if ch2 == b"M":
             return "RIGHT"
     elif ch == b"\r":
         return "ENTER"
@@ -96,10 +124,11 @@ def _get_key_windows():
     return ch.decode("utf-8", errors="ignore")
 
 
-def _get_key_posix():
+def _get_key_posix() -> str:
     """Read a keypress on POSIX via termios and tty."""
     import termios
     import tty
+
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
@@ -111,53 +140,53 @@ def _get_key_posix():
                 ch3 = sys.stdin.read(1)
                 if ch3 == "A":
                     return "UP"
-                elif ch3 == "B":
+                if ch3 == "B":
                     return "DOWN"
-                elif ch3 == "C":
+                if ch3 == "C":
                     return "RIGHT"
-                elif ch3 == "D":
+                if ch3 == "D":
                     return "LEFT"
             return "ESC"
-        elif ch == "\r" or ch == "\n":
+        if ch in ("\r", "\n"):
             return "ENTER"
-        elif ch == "\x03":
+        if ch == "\x03":
             raise KeyboardInterrupt
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def read_key():
+def read_key() -> str:
     """Read a single keypress cross-platform."""
     if os.name == "nt":
         return _get_key_windows()
-    else:
-        return _get_key_posix()
+    return _get_key_posix()
 
 
-def _fit_text(text, max_len):
-    """Truncate text to max_len with ellipsis if it exceeds width."""
+def _fit_text(text: str, max_len: int) -> str:
+    """Truncate text to max_len with ellipsis if it exceeds terminal width."""
     if not text:
         return ""
     if len(text) > max_len:
-        return text[:max(0, max_len - 3)] + "..."
+        return text[: max(0, max_len - 3)] + "..."
     return text
 
 
-def select(title, choices, default_index=0, help_text="Use ↑/↓ arrow keys to navigate, press ENTER to confirm"):
-    """
-    Interactive select menu with arrow keys, highlight cursor, and clean re-rendering.
-    Falls back to numbered input if running in non-interactive environment.
-    """
+def select(
+    title: str,
+    choices: list,
+    default_index: int = 0,
+    help_text: str = "Use ↑/↓ arrow keys to navigate, press ENTER to confirm",
+) -> int:
+    """Interactive select menu with arrow keys and numbered fallback."""
     if not sys.stdin.isatty():
-        # Fallback to standard numbered prompt
         print(f"\n{BOLD}{CYAN}? {title}{RESET}")
         for idx, item in enumerate(choices, 1):
             label = item if isinstance(item, str) else item.get("name", str(item))
             print(f"  [{idx}] {label}")
         while True:
             try:
-                raw = input(f"Select [1-{len(choices)}] (default {default_index+1}): ").strip()
+                raw = input(f"Select [1-{len(choices)}] (default {default_index + 1}): ").strip()
                 if not raw:
                     return default_index
                 val = int(raw) - 1
@@ -171,52 +200,38 @@ def select(title, choices, default_index=0, help_text="Use ↑/↓ arrow keys to
     num_choices = len(choices)
     has_any_desc = any(isinstance(c, dict) and bool(c.get("desc")) for c in choices)
 
-    # Initial render
     print(f"\n{BOLD}{BRIGHT_CYAN}? {title}{RESET}")
     if help_text:
         print(f"  {DIM}{help_text}{RESET}")
 
-    # Lines to clear: 1 per choice, plus 2 lines for description area if applicable
     lines_to_clear = num_choices + (2 if has_any_desc else 0)
-
-    # Hide cursor while interactive menu is active
     sys.stdout.write("\033[?25l")
     sys.stdout.flush()
 
     try:
         while True:
             cols = shutil.get_terminal_size(fallback=(80, 24)).columns
-            # Ensure label never exceeds terminal width (leaving margin for prefix "  ❯ [99] ")
             max_label_width = max(20, cols - 12)
 
-            # Print choices (guaranteed strictly <= cols - 2 printable chars to prevent any wrapping)
             for idx, item in enumerate(choices):
-                if isinstance(item, dict):
-                    raw_label = item.get("name", str(item))
-                else:
-                    raw_label = str(item)
-
+                raw_label = item.get("name", str(item)) if isinstance(item, dict) else str(item)
                 label = _fit_text(raw_label, max_label_width)
-
                 if idx == current_idx:
-                    prefix = f"  {BRIGHT_CYAN}❯ [{idx+1}]{RESET} {BOLD}{WHITE}{label}{RESET}"
+                    print(f"  {BRIGHT_CYAN}❯ [{idx + 1}]{RESET} {BOLD}{WHITE}{label}{RESET}")
                 else:
-                    prefix = f"  {DIM}  [{idx+1}] {label}{RESET}"
-                print(prefix)
+                    print(f"  {DIM}  [{idx + 1}] {label}{RESET}")
 
-            # Print dedicated description status line for the selected choice
             if has_any_desc:
                 max_desc_width = max(20, cols - 8)
                 curr_item = choices[current_idx]
                 raw_desc = curr_item.get("desc", "") if isinstance(curr_item, dict) else ""
                 desc = _fit_text(raw_desc, max_desc_width) if raw_desc else ""
-                print()  # Empty line separator
+                print()
                 if desc:
                     print(f"  {CYAN}ℹ {desc}{RESET}")
                 else:
                     print(f"  {DIM}ℹ (No additional description){RESET}")
 
-            # Wait for key
             try:
                 key = read_key()
             except KeyboardInterrupt:
@@ -231,7 +246,6 @@ def select(title, choices, default_index=0, help_text="Use ↑/↓ arrow keys to
                 clear_lines(lines_to_clear)
             elif key == "ENTER":
                 clear_lines(lines_to_clear)
-                # Print final selection cleanly
                 chosen = choices[current_idx]
                 chosen_label = chosen if isinstance(chosen, str) else chosen.get("name", str(chosen))
                 print(f"  {BRIGHT_GREEN}✔ Selected: {BOLD}{chosen_label}{RESET}")
@@ -249,13 +263,12 @@ def select(title, choices, default_index=0, help_text="Use ↑/↓ arrow keys to
             else:
                 clear_lines(lines_to_clear)
     finally:
-        # Always restore cursor visibility
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
 
 
-def prompt_input(message, default=None, validator=None):
-    """Prompt user for text input with optional default value and validator function."""
+def prompt_input(message: str, default: str | None = None, validator=None) -> str:
+    """Prompt user for text input with optional default value and validator."""
     prompt_str = f"{BOLD}{CYAN}? {message}{RESET}"
     if default is not None:
         prompt_str += f" {DIM}(default: {default}){RESET}"
@@ -277,9 +290,34 @@ def prompt_input(message, default=None, validator=None):
             sys.exit(0)
 
 
-def prompt_number(message, default=None, min_val=None, max_val=None, is_float=False):
-    """Prompt user for a valid integer or float number."""
-    def validator(v):
+def prompt_secret(message: str, existing_value: str | None = None) -> str:
+    """Prompt for a secret without echoing it or leaking raw existing values."""
+    hint = f" {DIM}(press Enter to keep {mask_secret(existing_value)}){RESET}" if existing_value else ""
+    prompt_str = f"{BOLD}{CYAN}? {message}{hint}: {RESET}"
+
+    while True:
+        try:
+            entered = getpass.getpass(prompt_str).strip()
+            if entered:
+                return entered
+            if existing_value:
+                return existing_value
+            print(f"  {RED}✖ Input cannot be empty.{RESET}")
+        except KeyboardInterrupt:
+            print("\n")
+            sys.exit(0)
+
+
+def prompt_number(
+    message: str,
+    default: int | float | None = None,
+    min_val: int | float | None = None,
+    max_val: int | float | None = None,
+    is_float: bool = False,
+) -> int | float:
+    """Prompt user for a validated integer or float."""
+
+    def validator(v: str) -> tuple[bool, str]:
         try:
             num = float(v) if is_float else int(v)
             if min_val is not None and num < min_val:
@@ -290,37 +328,37 @@ def prompt_number(message, default=None, min_val=None, max_val=None, is_float=Fa
         except ValueError:
             return False, "Input must be a valid number"
 
-    raw = prompt_input(message, default=default, validator=validator)
+    raw = prompt_input(message, default=str(default) if default is not None else None, validator=validator)
     return float(raw) if is_float else int(raw)
 
 
-def prompt_confirm(message, default=True):
+def prompt_confirm(message: str, default: bool = True) -> bool:
     """Prompt user for Yes/No confirmation."""
     def_str = "Y/n" if default else "y/N"
     raw = prompt_input(f"{message} [{def_str}]", default="y" if default else "n").lower()
     return raw in ("y", "yes")
 
 
-def print_step(title):
+def print_step(title: str) -> None:
     """Print a visually distinct workflow step banner."""
     print(f"\n{BOLD}{BG_BLUE}{WHITE}  {title.upper()}  {RESET}\n")
 
 
-def print_success(message):
+def print_success(message: str) -> None:
     """Print success message."""
     print(f"{BRIGHT_GREEN}✔ {message}{RESET}")
 
 
-def print_error(message):
+def print_error(message: str) -> None:
     """Print error message."""
     print(f"{RED}✖ {message}{RESET}")
 
 
-def print_warning(message):
+def print_warning(message: str) -> None:
     """Print warning message."""
     print(f"{BRIGHT_YELLOW}⚠ {message}{RESET}")
 
 
-def print_info(message):
+def print_info(message: str) -> None:
     """Print informative message."""
     print(f"{CYAN}ℹ {message}{RESET}")

@@ -1,139 +1,60 @@
 """
 Google Earth Engine & Roboflow Authentication and Credentials Management.
-Provides interactive login and credential setup for Earth Engine and Roboflow.
+Provides interactive login, connection status checks, and masked credential setup.
 """
 
+from __future__ import annotations
+
 import os
-import sys
-import argparse
 from pathlib import Path
 
-from pathlib import Path
-
-
-def extract_roboflow_slug(val):
-    """Clean a full URL or path into a bare Roboflow identifier/slug."""
-    if not val:
-        return ""
-    val = val.strip().rstrip("/")
-    if "roboflow.com/" in val:
-        val = val.split("roboflow.com/")[-1]
-    if "/" in val:
-        val = val.split("/")[-1]
-    return val.strip()
-
-
-def get_env_file_path():
-    """Resolve the environment file path.
-    Prefers 'data/.env' inside container (mounted via ./data) or root '.env'.
-    """
-    data_env = Path("data/.env")
-    root_env = Path(".env")
-    if root_env.is_file():
-        return root_env
-    if data_env.parent.is_dir():
-        return data_env
-    return root_env
-
-
-def load_app_env():
-    """Load environment variables safely from data/.env or .env."""
-    for p in [Path("data/.env"), Path(".env")]:
-        if p.is_file():
-            try:
-                from dotenv import load_dotenv
-                load_dotenv(str(p), override=False)
-            except ImportError:
-                pass
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            k, v = k.strip(), v.strip().strip("'\"")
-                            if k and k not in os.environ:
-                                os.environ[k] = v
-            except Exception:
-                pass
-
+from .config import (
+    extract_roboflow_slug,
+    is_valid_credential_val,
+    load_app_env,
+    mask_secret,
+    save_env_variable,
+)
+from .ui import (
+    print_error,
+    print_info,
+    print_step,
+    print_success,
+    print_warning,
+    prompt_confirm,
+    prompt_input,
+    prompt_secret,
+    select,
+    spinner,
+)
 
 load_app_env()
 
-from .ui import (
-    select,
-    prompt_input,
-    prompt_confirm,
-    print_step,
-    print_success,
-    print_error,
-    print_warning,
-    print_info,
-)
 
-
-DUMMY_PLACEHOLDERS = {
-    "your_gcp_project_id",
-    "your_private_api_key_here",
-    "your_workspace_id",
-    "your_project_id",
-    "none",
-    "null",
-}
-
-
-def is_valid_credential_val(val):
-    """Check if value is a real credential and not an example placeholder."""
-    if not val:
-        return False
-    val_clean = str(val).strip().lower()
-    return val_clean not in DUMMY_PLACEHOLDERS and not val_clean.startswith("your_")
-
-
-def get_ee_project_id():
-    """Retrieve Earth Engine GCP project ID from environment variables."""
+def get_ee_project_id() -> str | None:
+    """Retrieve the configured Earth Engine GCP project ID."""
     val = os.getenv("EE_PROJECT_ID", "").strip()
     return val if is_valid_credential_val(val) else None
 
 
-def save_env_variable(key, value):
-    """Save or update an environment variable in both data/.env and .env if writable."""
-    targets = []
-    data_env = Path("data/.env")
-    root_env = Path(".env")
+def get_connection_status() -> dict[str, bool]:
+    """Perform a fast local check of Earth Engine and Roboflow credential readiness."""
+    ee_creds_file = Path.home() / ".config" / "earthengine" / "credentials"
+    gee_ready = ee_creds_file.is_file() or bool(get_ee_project_id())
 
-    # Prefer data/.env as it is inside the permanently mounted ./data volume
-    if data_env.parent.is_dir():
-        targets.append(data_env)
-    if root_env.is_file() and root_env not in targets:
-        targets.append(root_env)
-
-    if not targets:
-        targets.append(data_env)
-
-    for env_file in targets:
-        try:
-            env_file.parent.mkdir(parents=True, exist_ok=True)
-            env_lines = []
-            if env_file.is_file():
-                with open(env_file, "r", encoding="utf-8") as f:
-                    for line in f:
-                        if not line.startswith(f"{key}="):
-                            env_lines.append(line.rstrip())
-            env_lines.append(f"{key}={value}")
-            with open(env_file, "w", encoding="utf-8") as f:
-                f.write("\n".join(env_lines) + "\n")
-        except Exception:
-            pass
-
-    os.environ[key] = str(value)
+    rf_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
+    rf_ws = os.getenv("ROBOFLOW_WORKSPACE", "").strip()
+    rf_proj = os.getenv("ROBOFLOW_PROJECT", "").strip()
+    roboflow_ready = (
+        is_valid_credential_val(rf_key)
+        and is_valid_credential_val(rf_ws)
+        and is_valid_credential_val(rf_proj)
+    )
+    return {"gee": gee_ready, "roboflow": roboflow_ready}
 
 
-def init_earth_engine(project_id=None):
-    """
-    Initialize Google Earth Engine connection using user browser OAuth credentials.
-    Returns True if successful, False otherwise.
-    """
+def init_earth_engine(project_id: str | None = None) -> bool:
+    """Initialize Google Earth Engine using cached OAuth credentials."""
     import ee
 
     project_id = project_id or get_ee_project_id()
@@ -141,98 +62,90 @@ def init_earth_engine(project_id=None):
     try:
         if project_id:
             ee.Initialize(project=project_id)
-            print(f"[AUTH] Successfully initialized Earth Engine (Project: {project_id})")
+            print_info(f"Earth Engine initialized (Project: {project_id})")
         else:
             ee.Initialize()
-            print("[AUTH] Successfully initialized Earth Engine (Default Project)")
+            print_info("Earth Engine initialized (Default Project)")
         return True
-    except Exception as e:
-        err_msg = str(e)
-        print(f"\n[AUTH FAILED] Google Earth Engine is not authenticated: {err_msg}")
+    except Exception as exc:
+        print_warning(f"Google Earth Engine is not authenticated: {exc}")
         return False
 
 
-def login_flow(project_id=None):
-    """Trigger browser OAuth authentication flow for Google Earth Engine."""
+def login_flow(project_id: str | None = None, work_dir: Path | None = None) -> bool:
+    """Trigger browser OAuth authentication for Google Earth Engine."""
     import ee
 
-    print("=" * 60)
-    print("  GOOGLE EARTH ENGINE (GEE) - BROWSER OAUTH LOGIN")
-    print("=" * 60)
+    print_step("Google Earth Engine - Browser OAuth Login")
 
     try:
-        print("\nOpening web browser for Google authentication...")
-        # In Docker containers / headless environments, auth_mode='notebook' provides a verification code
-        # web flow without requiring the heavy Google Cloud SDK (gcloud) installation.
+        print_info("Opening browser for Google authentication...")
         try:
-            ee.Authenticate(auth_mode="notebook")
-        except TypeError:
             ee.Authenticate()
-        print("\n[OK] Authentication token successfully saved to local credentials cache.")
+        except Exception:
+            print_info("Browser auto-open unavailable. Switching to verification-code flow...")
+            ee.Authenticate(auth_mode="notebook")
+
+        print_success("Authentication token saved to local credentials cache.")
 
         current_proj = project_id if is_valid_credential_val(project_id) else get_ee_project_id()
-        print_info("\nPlease enter the Google Cloud Project ID associated with your GEE account.")
-        print_info("To check or find your GCP Project ID, visit:")
-        print_info("  🔗 Google Cloud Console   : https://console.cloud.google.com/welcome")
-        print_info("  🔗 Earth Engine Projects  : https://code.earthengine.google.com/\n")
-        project_id = prompt_input("GCP Project ID (e.g., my-gee-project-123)", default=current_proj).strip()
+        print_info("\nEnter the Google Cloud Project ID linked to your Earth Engine account.")
+        print_info("Check your Project ID at: https://console.cloud.google.com/welcome\n")
+        project_id = prompt_input(
+            "GCP Project ID (e.g., my-gee-project-123)",
+            default=current_proj,
+        ).strip()
 
         if project_id:
-            save_env_variable("EE_PROJECT_ID", project_id)
-            print_success(f"Project ID '{project_id}' saved to configuration")
+            save_env_variable("EE_PROJECT_ID", project_id, work_dir=work_dir)
+            print_success(f"Project ID '{project_id}' saved.")
 
-        print("\nVerifying initialization...")
-        try:
+        with spinner("Verifying Earth Engine initialization..."):
             if project_id:
                 ee.Initialize(project=project_id)
             else:
                 ee.Initialize()
-            print_success("Google Earth Engine initialized and ready to use!")
-            return True
-        except Exception as init_err:
-            print_error(f"Initialization check failed: {init_err}")
-            err_str = str(init_err)
-            if "not registered" in err_str.lower():
-                print_warning(f"\nYour GCP project '{project_id}' is not yet registered for Earth Engine access:")
-                print_info(f"  🔗 1. Open Configuration : https://console.cloud.google.com/earth-engine/configuration?project={project_id}")
-                print_info("  🔗 2. Select Project Usage : Choose 'Unpaid / Noncommercial' (or appropriate tier).")
-                print_info("  🔗 3. Select Project Type  : Choose 'Personal / Student / Research / Open Source' and click Confirm.")
-                print_info("  🔗 4. Return to GeoChip and select 'Test Connections' or re-run GEE Login.\n")
-            else:
-                print_warning("\nPlease verify Earth Engine API enablement and registration for your GCP project:")
-                print_info(f"  🔗 Enable API       : https://console.cloud.google.com/apis/library/earthengine.googleapis.com?project={project_id or ''}")
-                print_info(f"  🔗 Register Project : https://console.cloud.google.com/earth-engine/configuration?project={project_id or ''}\n")
-            return False
 
-    except Exception as e:
-        print_error(f"Login failed: {e}")
+        print_success("Google Earth Engine is ready to use.")
+        return True
+
+    except Exception as exc:
+        print_error(f"Login or initialization failed: {exc}")
+        err_str = str(exc).lower()
+        if "not registered" in err_str and project_id:
+            print_warning(f"\nProject '{project_id}' is not registered for Earth Engine yet:")
+            print_info(f"  1. Open: https://console.cloud.google.com/earth-engine/configuration?project={project_id}")
+            print_info("  2. Select 'Unpaid / Noncommercial' (or your appropriate tier) and confirm.")
+        else:
+            print_info(
+                f"Verify Earth Engine API is enabled: "
+                f"https://console.cloud.google.com/apis/library/earthengine.googleapis.com?project={project_id or ''}"
+            )
         return False
 
 
-def setup_roboflow_credentials():
-    """Interactive Roboflow API credentials setup."""
+def setup_roboflow_credentials(work_dir: Path | None = None) -> None:
+    """Interactive Roboflow API credentials setup with masked secret input."""
+    load_app_env(work_dir)
     print_step("Roboflow Credentials Setup")
 
-    current_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
-    current_ws = os.getenv("ROBOFLOW_WORKSPACE", "").strip()
-    current_proj = os.getenv("ROBOFLOW_PROJECT", "").strip()
+    raw_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
+    raw_ws = os.getenv("ROBOFLOW_WORKSPACE", "").strip()
+    raw_proj = os.getenv("ROBOFLOW_PROJECT", "").strip()
 
-    current_key = current_key if is_valid_credential_val(current_key) else None
-    current_ws = current_ws if is_valid_credential_val(current_ws) else None
-    current_proj = current_proj if is_valid_credential_val(current_proj) else None
+    current_key = raw_key if is_valid_credential_val(raw_key) else None
+    current_ws = raw_ws if is_valid_credential_val(raw_ws) else None
+    current_proj = raw_proj if is_valid_credential_val(raw_proj) else None
 
-    print_info("Configuring Roboflow Private API Key and Project Workspace.")
-    print_info("Credentials will be safely saved to your environment configuration.\n")
-    print_info("How to obtain your Roboflow credentials:")
-    print_info("  1. Private API Key : Login to app.roboflow.com -> Settings -> Roboflow API -> Private API Key")
-    print_info("  2. Workspace ID    : Found in the workspace URL -> app.roboflow.com/<workspace-slug>")
-    print_info("  3. Target Project  : Found in project URL -> app.roboflow.com/<workspace-slug>/<project-id>\n")
+    print_info("How to find your Roboflow credentials:")
+    print_info("  1. Private API Key : app.roboflow.com -> Settings -> Roboflow API")
+    print_info("  2. Workspace Slug  : app.roboflow.com/<workspace-slug>")
+    print_info("  3. Project ID      : app.roboflow.com/<workspace-slug>/<project-id>\n")
 
-    raw_api_key = prompt_input("Roboflow Private API Key", default=current_key if current_key else None)
-    raw_workspace = prompt_input("Roboflow Workspace ID / Slug", default=current_ws if current_ws else None)
-    raw_project = prompt_input("Target Roboflow Project ID", default=current_proj if current_proj else None)
+    api_key = prompt_secret("Roboflow Private API Key", existing_value=current_key)
+    raw_workspace = prompt_input("Roboflow Workspace ID / Slug", default=current_ws)
+    raw_project = prompt_input("Target Roboflow Project ID", default=current_proj)
 
-    api_key = raw_api_key.strip()
     workspace = extract_roboflow_slug(raw_workspace)
     project = extract_roboflow_slug(raw_project)
 
@@ -242,78 +155,78 @@ def setup_roboflow_credentials():
         print_info(f"Cleaned Project URL to slug: '{project}'")
 
     if api_key:
-        save_env_variable("ROBOFLOW_API_KEY", api_key)
+        save_env_variable("ROBOFLOW_API_KEY", api_key, work_dir=work_dir)
     if workspace:
-        save_env_variable("ROBOFLOW_WORKSPACE", workspace)
+        save_env_variable("ROBOFLOW_WORKSPACE", workspace, work_dir=work_dir)
     if project:
-        save_env_variable("ROBOFLOW_PROJECT", project)
+        save_env_variable("ROBOFLOW_PROJECT", project, work_dir=work_dir)
 
-    print_success("Roboflow credentials successfully saved!")
+    print_success(f"Roboflow credentials saved (Key: {mask_secret(api_key)}).")
 
-    # Test connection
-    if prompt_confirm("Would you like to test the Roboflow connection now?", default=True):
+    if api_key and workspace and project and prompt_confirm("Test Roboflow connection now?", default=True):
         try:
-            from roboflow import Roboflow
-            rf = Roboflow(api_key=api_key)
-            ws_obj = rf.workspace(workspace)
-            proj_obj = ws_obj.project(project)
-            print_success(f"Successfully connected to Roboflow project: '{workspace}/{project}' (Name: '{proj_obj.name}')")
-        except Exception as e:
-            print_error(f"Could not connect to Roboflow: {e}")
-            print_warning("Please verify your API key and workspace/project slug.")
+            with spinner("Connecting to Roboflow..."):
+                from roboflow import Roboflow
+
+                rf = Roboflow(api_key=api_key)
+                proj_obj = rf.workspace(workspace).project(project)
+            print_success(f"Connected to Roboflow project '{workspace}/{project}' ({proj_obj.name}).")
+        except Exception as exc:
+            print_error(f"Could not connect to Roboflow: {exc}")
+            print_warning("Verify your API key and workspace/project slug.")
 
 
-def test_all_connections():
-    """Diagnostic tool to test Earth Engine and Roboflow connectivity."""
+def test_all_connections(work_dir: Path | None = None) -> None:
+    """Run a live diagnostic test for Google Earth Engine and Roboflow."""
+    load_app_env(work_dir)
     print_step("Diagnostic Connection Test")
 
-    # 1. Earth Engine Check
     print_info("Testing Google Earth Engine...")
-    ee_ok = init_earth_engine()
-    if ee_ok:
+    if init_earth_engine():
         try:
-            import ee
-            test_val = ee.Number(42).getInfo()
-            print_success(f"Earth Engine API compute test passed (Result: {test_val})")
-        except Exception as e:
-            print_error(f"Earth Engine compute failed: {e}")
-            ee_ok = False
-    else:
-        print_error("Earth Engine connection failed. Please run GEE Login.")
+            with spinner("Running Earth Engine compute check..."):
+                import ee
 
-    # 2. Roboflow Check
+                test_val = ee.Number(42).getInfo()
+            print_success(f"Earth Engine compute check passed (Result: {test_val}).")
+        except Exception as exc:
+            print_error(f"Earth Engine compute failed: {exc}")
+    else:
+        print_error("Earth Engine connection failed. Run Google Earth Engine Login.")
+
     print("\n" + "-" * 40)
     print_info("Testing Roboflow credentials...")
     rf_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
-    rf_ws = extract_roboflow_slug(os.getenv("ROBOFLOW_WORKSPACE", "").strip())
-    rf_proj = extract_roboflow_slug(os.getenv("ROBOFLOW_PROJECT", "").strip())
+    rf_ws = extract_roboflow_slug(os.getenv("ROBOFLOW_WORKSPACE", ""))
+    rf_proj = extract_roboflow_slug(os.getenv("ROBOFLOW_PROJECT", ""))
 
-    if not rf_key or not rf_ws or not rf_proj:
-        print_warning("Roboflow credentials are incomplete in .env. Run Setup Roboflow Credentials.")
+    if not (is_valid_credential_val(rf_key) and rf_ws and rf_proj):
+        print_warning("Roboflow credentials are not configured yet (optional for local-only chipping).")
     else:
         try:
-            from roboflow import Roboflow
-            rf = Roboflow(api_key=rf_key)
-            proj = rf.workspace(rf_ws).project(rf_proj)
-            print_success(f"Roboflow connection verified: '{rf_ws}/{rf_proj}'")
-        except Exception as e:
-            print_error(f"Roboflow check failed: {e}")
+            with spinner("Connecting to Roboflow..."):
+                from roboflow import Roboflow
+
+                rf = Roboflow(api_key=rf_key)
+                rf.workspace(rf_ws).project(rf_proj)
+            print_success(f"Roboflow verified: '{rf_ws}/{rf_proj}' (Key: {mask_secret(rf_key)}).")
+        except Exception as exc:
+            print_error(f"Roboflow check failed: {exc}")
 
     print("\n" + "=" * 60)
 
 
-# Backward compatibility alias
 test_earth_engine_connection = test_all_connections
 
 
-def interactive_auth_menu():
-    """Interactive authentication management submenu."""
+def interactive_auth_menu(work_dir: Path | None = None) -> None:
+    """Interactive authentication and credentials submenu."""
     print_step("Credentials & Authentication Setup")
 
     auth_choices = [
         {
             "name": "🌐 Google Earth Engine Login (Browser OAuth)",
-            "desc": "Authenticate with your Google account via browser and set GCP Project ID",
+            "desc": "Sign in with Google via browser and set your GCP Project ID",
             "action": "gee",
         },
         {
@@ -323,45 +236,26 @@ def interactive_auth_menu():
         },
         {
             "name": "🔍 Test Connections & Diagnostic Status",
-            "desc": "Verify live API connectivity to Earth Engine and Roboflow",
+            "desc": "Verify live connectivity to Google Earth Engine and Roboflow",
             "action": "test",
         },
         {
             "name": "⬅️ Back to Main Menu",
-            "desc": "Return to the main GeoChip menu",
+            "desc": "Return to the main GeoChip CLI menu",
             "action": "back",
         },
     ]
 
     while True:
-        idx = select("Select Authentication / Credential Action:", auth_choices, default_index=0)
+        idx = select("Select Authentication Action:", auth_choices, default_index=0)
         action = auth_choices[idx]["action"]
 
         if action == "gee":
-            login_flow()
+            login_flow(work_dir=work_dir)
         elif action == "roboflow":
-            setup_roboflow_credentials()
+            setup_roboflow_credentials(work_dir=work_dir)
         elif action == "test":
-            test_all_connections()
+            test_all_connections(work_dir=work_dir)
         elif action == "back":
             break
         print("\n")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Google Earth Engine & Roboflow Authentication Setup")
-    parser.add_argument("--login", action="store_true", help="Launch interactive browser login for Earth Engine")
-    parser.add_argument("--project", type=str, default=None, help="Google Cloud Project ID")
-    parser.add_argument("--roboflow", action="store_true", help="Configure Roboflow credentials")
-    args = parser.parse_args()
-
-    if args.roboflow:
-        setup_roboflow_credentials()
-    elif args.login:
-        login_flow(project_id=args.project)
-    else:
-        interactive_auth_menu()
-
-
-if __name__ == "__main__":
-    main()
