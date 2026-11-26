@@ -77,8 +77,10 @@ curl -fsSL https://raw.githubusercontent.com/Anovvy/GeoChip-CLI/main/scripts/ins
 ### Option 2: Install via `pip` / `pipx`
 
 ```bash
-pip install git+https://github.com/Anovvy/GeoChip-CLI.git
+pip install geochip
 ```
+
+*(Or install the latest development source from GitHub: `pip install git+https://github.com/Anovvy/GeoChip-CLI.git`)*
 
 ### Launch GeoChip CLI
 
