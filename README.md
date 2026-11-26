@@ -22,13 +22,9 @@
 
 **GeoChip CLI** is a native Python command-line tool that guides you from defining an Area of Interest (AOI) to downloading cloud-filtered satellite imagery from **Google Earth Engine (GEE)**, slicing rasters into ML-ready image chips, and uploading labeled task batches to **Roboflow**.
 
-No Docker Desktop, WSL 2, or manual GDAL setup is required — install in seconds and run `GeoChip` directly from any terminal.
-
 ### Key Highlights
 
-- **Simple Native Command**: Just run `GeoChip` (or `geochip`) in your terminal — no `python main.py` or containers needed.
 - **Beginner-Friendly Interactive UI**: Arrow-key menus, live GEE/Roboflow connection status badges, date validation, progress spinners, and a **Quick Start: Full Pipeline** mode.
-- **GeoJSON & Auto-Reprojected Shapefiles**: Drop a single `.geojson` file (e.g., from [geojson.io](https://geojson.io)) or an ESRI `.shp` file in any projection (including UTM); GeoChip CLI automatically reprojects it to WGS84 (`EPSG:4326`).
 - **Multi-Sensor Earth Observation Catalog**:
   - **Copernicus Sentinel-2 L2A (10m)** — Optical multispectral with QA60 + SCL cloud masking
   - **USGS Landsat 9 & Landsat 8 C2 L2 (30m)** — Surface reflectance with `QA_PIXEL` masking
