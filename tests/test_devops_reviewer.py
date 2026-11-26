@@ -84,3 +84,31 @@ def test_fallback_raises_when_all_models_fail() -> None:
                 runner=failing_runner,
             )
         )
+
+
+def test_fallback_switches_on_model_timeout() -> None:
+    """If a model hangs past per_model_timeout, switch immediately to the next model."""
+    mod = _load_reviewer_module()
+    attempted: list[str] = []
+
+    async def slow_first_runner(
+        model_id: str, prompt: str, api_key: str, workspace_dir: str
+    ) -> str:
+        attempted.append(model_id)
+        if model_id == "gemini-4-hydrogen":
+            await asyncio.sleep(0.5)
+        return "### Verdict\nAPPROVE WITH NOTES"
+
+    review_md, used_model = asyncio.run(
+        mod.run_review_with_fallback(
+            prompt="Review diff",
+            api_key="test-key",
+            workspace_dir=".",
+            runner=slow_first_runner,
+            per_model_timeout=0.05,
+        )
+    )
+
+    assert attempted == ["gemini-4-hydrogen", "gemini-3.8-flash"]
+    assert used_model == "gemini-3.8-flash"
+    assert "APPROVE WITH NOTES" in review_md

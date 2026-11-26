@@ -7,6 +7,7 @@ Gemini API Free Tier with automatic 4-tier model fallback on high demand or quot
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
@@ -22,6 +23,7 @@ MODEL_FALLBACK_CHAIN: tuple[str, ...] = (
 )
 
 COMMENT_MARKER = "<!-- agy-devops-review -->"
+PER_MODEL_TIMEOUT_SECONDS = 90.0
 
 RETRYABLE_ERROR_MARKERS = (
     "429",
@@ -66,6 +68,7 @@ def build_review_prompt(
 
     return f"""You are a Senior DevOps & Geospatial Platform Engineer reviewing a Pull Request for GeoChip CLI.
 Deterministic CI checks (lint, unit/integration tests, build, Bandit SAST, CodeQL, pip-audit) have already passed.
+The full PR diff and AGENTS.md are included below. Only read extra files if strictly necessary, and finish your review in 1-2 turns.
 
 Focus your review on high-signal risks relevant to this repository:
 1. Repository Governance (`AGENTS.md`):
@@ -121,16 +124,13 @@ async def _default_agy_runner(model_id: str, prompt: str, api_key: str, workspac
         workspaces=[workspace_dir],
         retry_config=types.RetryConfig(
             api_retry=types.ModelAPIRetryConfig(
-                max_retries=1,
-                initial_sleep_duration_ms=1000,
-                exponential_multiplier=2.0,
-                jitter_range=0.1,
+                max_retries=0,
             )
         ),
         budget_config=types.BudgetConfig(
-            max_model_calls=12,
-            max_tool_calls=20,
-            max_total_tokens=150_000,
+            max_model_calls=4,
+            max_tool_calls=6,
+            max_total_tokens=100_000,
         ),
         policies=[
             policy.deny_all(),
@@ -138,11 +138,16 @@ async def _default_agy_runner(model_id: str, prompt: str, api_key: str, workspac
             policy.allow("list_directory"),
             policy.allow("search_directory"),
             policy.allow("find_file"),
+            policy.allow("finish"),
         ],
     )
 
     async with Agent(config=config) as agent:
         response = await agent.chat(prompt)
+        stop_reason = getattr(response, "stop_reason", None)
+        exhausted_reason = getattr(types.StopReason, "RESOURCE_EXHAUSTED", None)
+        if exhausted_reason is not None and stop_reason == exhausted_reason:
+            raise RuntimeError("429 RESOURCE_EXHAUSTED: Gemini quota or capacity reached")
         return (await response.text()).strip()
 
 
@@ -152,6 +157,7 @@ async def run_review_with_fallback(
     workspace_dir: str,
     models: tuple[str, ...] = MODEL_FALLBACK_CHAIN,
     runner: Callable[[str, str, str, str], Awaitable[str]] | None = None,
+    per_model_timeout: float = PER_MODEL_TIMEOUT_SECONDS,
 ) -> tuple[str, str]:
     """Run PR review across the ordered Gemini model fallback chain."""
     exec_fn = runner or _default_agy_runner
@@ -159,22 +165,37 @@ async def run_review_with_fallback(
 
     for model_id in models:
         try:
-            print(f"[AGY DevOps Reviewer] Attempting review with model: {model_id}")
-            result = await exec_fn(model_id, prompt, api_key, workspace_dir)
+            print(f"[AGY DevOps Reviewer] Attempting review with model: {model_id}", flush=True)
+            result = await asyncio.wait_for(
+                exec_fn(model_id, prompt, api_key, workspace_dir),
+                timeout=per_model_timeout,
+            )
             if result:
-                print(f"[AGY DevOps Reviewer] Review completed with model: {model_id}")
+                print(
+                    f"[AGY DevOps Reviewer] Review completed with model: {model_id}",
+                    flush=True,
+                )
                 return result, model_id
             errors.append(f"{model_id}: empty response returned")
+        except TimeoutError:
+            errors.append(f"{model_id}: timed out after {per_model_timeout}s")
+            print(
+                f"[AGY DevOps Reviewer] Model '{model_id}' timed out after {per_model_timeout}s; switching to next model...",
+                flush=True,
+            )
+            continue
         except Exception as exc:
             err_summary = f"{model_id}: {type(exc).__name__}: {exc}"
             errors.append(err_summary)
             if is_retryable_model_error(exc):
                 print(
-                    f"[AGY DevOps Reviewer] Model '{model_id}' unavailable/rate-limited; switching to next model..."
+                    f"[AGY DevOps Reviewer] Model '{model_id}' unavailable/rate-limited; switching to next model...",
+                    flush=True,
                 )
                 continue
             print(
-                f"[AGY DevOps Reviewer] Model '{model_id}' failed ({exc}); switching to next model..."
+                f"[AGY DevOps Reviewer] Model '{model_id}' failed ({exc}); switching to next model...",
+                flush=True,
             )
             continue
 
@@ -250,6 +271,10 @@ def post_or_update_pr_comment(repo: str, pr_number: int, token: str, body: str) 
 
 def main() -> int:
     """CLI entry point for CI execution."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     token = os.getenv("GITHUB_TOKEN", "").strip()
     repo = os.getenv("GITHUB_REPOSITORY", "").strip()
@@ -257,7 +282,8 @@ def main() -> int:
 
     if not api_key:
         print(
-            "[AGY DevOps Reviewer] GEMINI_API_KEY secret is not configured. Skipping AI PR review."
+            "[AGY DevOps Reviewer] GEMINI_API_KEY secret is not configured. Skipping AI PR review.",
+            flush=True,
         )
         return 0
 
