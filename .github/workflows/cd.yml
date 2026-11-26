@@ -1,0 +1,185 @@
+name: GeoChip CLI CD (Canary & Production Release)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "SemVer tag to release (e.g. v3.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-changelog:
+    name: Build dist/ Bundle & Generate Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SemVer Tag & Version Alignment
+        id: meta
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "Invalid SemVer tag: '$TAG'. Expected vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+          PKG_VER=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          TAG_VER="${TAG#v}"
+          if [ "$PKG_VER" != "$TAG_VER" ]; then
+            echo "Version mismatch: pyproject.toml=$PKG_VER vs tag=$TAG_VER"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Build Package & SHA256 Checksums
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+          python -m build
+          twine check dist/*
+          sha256sum dist/* > SHA256SUMS.txt
+
+      - name: Generate Release Notes & Update CHANGELOG.md
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.meta.outputs.tag }} --output CHANGELOG.md
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Extract Current Release Notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header --tag ${{ steps.meta.outputs.tag }} --output RELEASE_NOTES.md
+
+      - name: Upload Release Bundle Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: |
+            dist/
+            SHA256SUMS.txt
+            CHANGELOG.md
+            RELEASE_NOTES.md
+
+  canary-release:
+    name: Canary Release (GitHub Pre-Release & Optional TestPyPI)
+    needs: build-and-changelog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Release Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+
+      - name: Publish GitHub Pre-Release (Canary)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-and-changelog.outputs.tag }}
+          name: "GeoChip CLI ${{ needs.build-and-changelog.outputs.tag }} (Canary)"
+          body_path: RELEASE_NOTES.md
+          prerelease: true
+          files: |
+            dist/*
+            SHA256SUMS.txt
+
+      - name: Check TestPyPI Token
+        id: testpypi
+        env:
+          TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "TEST_PYPI_API_TOKEN not configured; skipping TestPyPI canary upload."
+          fi
+
+      - name: Publish Canary to TestPyPI
+        if: steps.testpypi.outputs.enabled == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          packages-dir: dist/
+          skip-existing: true
+
+  promote-production:
+    name: Promote Canary to Production Release
+    needs: [build-and-changelog, canary-release]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Release Bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+
+      - name: Promote GitHub Release to Production
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-and-changelog.outputs.tag }}
+          name: "GeoChip CLI ${{ needs.build-and-changelog.outputs.tag }}"
+          body_path: RELEASE_NOTES.md
+          prerelease: false
+          make_latest: true
+          files: |
+            dist/*
+            SHA256SUMS.txt
+
+      - name: Check PyPI Token
+        id: pypi
+        env:
+          TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "PYPI_API_TOKEN not configured; skipping PyPI production publish."
+          fi
+
+      - name: Publish Production Package to PyPI
+        if: steps.pypi.outputs.enabled == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist/
+          skip-existing: true
+
+      - name: Open PR with Updated CHANGELOG.md
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "docs(changelog): update CHANGELOG.md for ${{ needs.build-and-changelog.outputs.tag }}"
+          title: "docs(changelog): release ${{ needs.build-and-changelog.outputs.tag }}"
+          body: |
+            Automated CHANGELOG update for release `${{ needs.build-and-changelog.outputs.tag }}`.
+          branch: "docs/changelog-${{ needs.build-and-changelog.outputs.tag }}"
+          base: main
+          add-paths: CHANGELOG.md

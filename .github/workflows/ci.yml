@@ -1,14 +1,20 @@
-name: GeoChip CI (Lint & Test)
+name: GeoChip CLI CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   lint:
-    name: Code Quality & Linting (Workflow A)
+    name: Lint & Format (Ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -20,17 +26,18 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Linting Tools
+      - name: Install Ruff
         run: |
           python -m pip install --upgrade pip
           pip install ruff
 
-      - name: Run Ruff Lint Check
+      - name: Run Ruff Lint & Format Check
         run: |
-          ruff check . --select=E9,F63,F7,F82
+          ruff check .
+          ruff format --check .
 
   test:
-    name: Automated Unit Tests (Workflow B)
+    name: Unit & Integration Tests
     needs: lint
     runs-on: ubuntu-latest
     strategy:
@@ -48,25 +55,134 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
-      - name: Install System Geospatial Libraries (GDAL)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev libspatialindex-dev
-
-      - name: Install Project Dependencies
+      - name: Install Package & Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest
-          pip install -e .
+          pip install -e ".[dev]"
 
-      - name: Run Offline Unit & Integration Tests
-        run: |
-          pytest tests/ -v
+      - name: Run Test Suite
+        run: pytest tests/ -v --cov=geochip --cov-report=term-missing
 
-      - name: Verify CLI Entry Points
+  build:
+    name: Test Build & CLI Smoke Check
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Build Wheel & Source Distribution
         run: |
-          python main.py --help
-          python download_data.py --help
-          python create_chips.py --help
-          python upload_roboflow.py --help
-          python auth_setup.py --help
+          python -m pip install --upgrade pip
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Smoke Test Built Wheel in Clean Venv
+        run: |
+          python -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install dist/*.whl
+          /tmp/smoke-venv/bin/GeoChip --version
+          /tmp/smoke-venv/bin/GeoChip --help
+          /tmp/smoke-venv/bin/geochip --help
+
+  sast:
+    name: SAST (Bandit)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Run Bandit SAST
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
+          bandit -r geochip/ .github/scripts/ -ll
+
+  codeql:
+    name: SAST (CodeQL)
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  dependency-scan:
+    name: Dependency Scanner (pip-audit)
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Run pip-audit
+        run: |
+          python -m venv /tmp/audit-venv
+          /tmp/audit-venv/bin/python -m pip install --upgrade pip
+          /tmp/audit-venv/bin/pip install -e . pip-audit
+          /tmp/audit-venv/bin/pip-audit --skip-editable
+
+  agy-devops-review:
+    name: AGY SDK Senior DevOps PR Review
+    needs: [lint, test, build, sast, codeql, dependency-scan]
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install AGY SDK Reviewer Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-antigravity requests
+
+      - name: Run Senior DevOps PR Review
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python .github/scripts/devops_pr_reviewer.py
