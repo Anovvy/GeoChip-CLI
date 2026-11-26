@@ -93,7 +93,7 @@ jobs:
           name: release-bundle
 
       - name: Publish GitHub Pre-Release (Canary)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.build-and-changelog.outputs.tag }}
           name: "GeoChip CLI ${{ needs.build-and-changelog.outputs.tag }} (Canary)"
@@ -142,7 +142,7 @@ jobs:
           name: release-bundle
 
       - name: Promote GitHub Release to Production
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.build-and-changelog.outputs.tag }}
           name: "GeoChip CLI ${{ needs.build-and-changelog.outputs.tag }}"
