@@ -54,7 +54,7 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
-          sha256sum dist/* > dist/SHA256SUMS.txt
+          sha256sum dist/* > SHA256SUMS.txt
 
       - name: Generate Release Notes & Update CHANGELOG.md
         uses: orhun/git-cliff-action@v4
@@ -76,6 +76,7 @@ jobs:
           name: release-bundle
           path: |
             dist/
+            SHA256SUMS.txt
             CHANGELOG.md
             RELEASE_NOTES.md
 
@@ -98,7 +99,9 @@ jobs:
           name: "GeoChip CLI ${{ needs.build-and-changelog.outputs.tag }} (Canary)"
           body_path: RELEASE_NOTES.md
           prerelease: true
-          files: dist/*
+          files: |
+            dist/*
+            SHA256SUMS.txt
 
       - name: Check TestPyPI Token
         id: testpypi
@@ -119,6 +122,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           packages-dir: dist/
+          skip-existing: true
 
   promote-production:
     name: Promote Canary to Production Release
@@ -145,7 +149,9 @@ jobs:
           body_path: RELEASE_NOTES.md
           prerelease: false
           make_latest: true
-          files: dist/*
+          files: |
+            dist/*
+            SHA256SUMS.txt
 
       - name: Check PyPI Token
         id: pypi
@@ -165,6 +171,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist/
+          skip-existing: true
 
       - name: Open PR with Updated CHANGELOG.md
         uses: peter-evans/create-pull-request@v7
@@ -175,3 +182,4 @@ jobs:
             Automated CHANGELOG update for release `${{ needs.build-and-changelog.outputs.tag }}`.
           branch: "docs/changelog-${{ needs.build-and-changelog.outputs.tag }}"
           base: main
+          add-paths: CHANGELOG.md
