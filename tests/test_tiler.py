@@ -9,10 +9,17 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import rasterio
+from rasterio.errors import RasterioIOError
 from rasterio.transform import from_origin
 
-from geochip.tiler import create_single_raster_chips
+from geochip.tiler import (
+    build_chip_size_choices,
+    create_single_raster_chips,
+    get_raster_dimensions,
+    interactive_chipping_workflow,
+)
 
 
 def test_offline_wgs84_raster_chipping(tmp_path: Path) -> None:
@@ -91,3 +98,94 @@ def test_projected_utm_raster_manifest_transforms_to_wgs84(tmp_path: Path) -> No
     min_lon, min_lat, max_lon, max_lat = manifest["chips"][0]["geo_bbox"]
     assert 107.70 <= min_lon < max_lon <= 107.85
     assert -6.65 <= min_lat < max_lat <= -6.50
+
+
+def test_build_chip_size_choices_sentinel2_aoi2() -> None:
+    """Rasters around Sentinel-2 AOI-2 dimensions fit 160/320 px and flag 640/1280 px."""
+    choices, default_idx, has_compatible = build_chip_size_choices(895, 414)
+
+    assert has_compatible is True
+    assert default_idx == 1
+    assert "~10 max chips (5x2 grid)" in choices[0]["desc"]
+    assert "~2 max chips (2x1 grid)" in choices[1]["desc"]
+    assert "[Too large for 895x414 px raster]" in choices[2]["desc"]
+    assert "[Too large for 895x414 px raster]" in choices[3]["desc"]
+
+
+def test_build_chip_size_choices_srtm_too_small() -> None:
+    """Rasters smaller than 160x160 px flag every chip preset as too large."""
+    choices, default_idx, has_compatible = build_chip_size_choices(302, 140)
+
+    assert has_compatible is False
+    assert default_idx == 0
+    assert all("[Too large for 302x140 px raster]" in c["desc"] for c in choices)
+
+
+def test_build_chip_size_choices_large_raster_defaults_to_640() -> None:
+    """Large rasters that fit all presets keep 640 x 640 px as the default selection."""
+    choices, default_idx, has_compatible = build_chip_size_choices(2000, 2000)
+
+    assert has_compatible is True
+    assert default_idx == 2
+    assert all("[Too large" not in c["desc"] for c in choices)
+
+
+def test_get_raster_dimensions(tmp_path: Path) -> None:
+    """Read (width, height) pixel dimensions directly from a synthetic GeoTIFF."""
+    test_tif = tmp_path / "srtm_sample.tif"
+    data = np.full((1, 140, 302), 100, dtype=np.uint8)
+    transform = from_origin(107.74, -6.55, 0.00027, 0.00027)
+
+    with rasterio.open(
+        str(test_tif),
+        "w",
+        driver="GTiff",
+        height=140,
+        width=302,
+        count=1,
+        dtype=np.uint8,
+        crs="EPSG:4326",
+        transform=transform,
+    ) as dst:
+        dst.write(data)
+
+    assert get_raster_dimensions(test_tif) == (302, 140)
+
+
+def test_get_raster_dimensions_missing_file_raises(tmp_path: Path) -> None:
+    """Missing or unreadable raster paths raise RasterioIOError."""
+    with pytest.raises(RasterioIOError):
+        get_raster_dimensions(tmp_path / "does_not_exist.tif")
+
+
+def test_interactive_chipping_workflow_aborts_on_incompatible_or_corrupt_raster(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Incompatible or corrupt rasters exit cleanly without prompting for chip/batch options."""
+
+    def fail_if_prompted(*args: object, **kwargs: object) -> int:
+        raise AssertionError("Interactive prompt should not be called on incompatible rasters")
+
+    monkeypatch.setattr("geochip.tiler.select", fail_if_prompted)
+    monkeypatch.setattr("geochip.tiler.prompt_number", fail_if_prompted)
+
+    small_tif = tmp_path / "too_small.tif"
+    data = np.full((1, 140, 302), 100, dtype=np.uint8)
+    with rasterio.open(
+        str(small_tif),
+        "w",
+        driver="GTiff",
+        height=140,
+        width=302,
+        count=1,
+        dtype=np.uint8,
+        crs="EPSG:4326",
+        transform=from_origin(107.74, -6.55, 0.00027, 0.00027),
+    ) as dst:
+        dst.write(data)
+
+    interactive_chipping_workflow(work_dir=tmp_path, preselected_raster=small_tif)
+
+    corrupt_tif = tmp_path / "corrupt.tif"
+    corrupt_tif.write_bytes(b"not a valid geotiff")
+    interactive_chipping_workflow(work_dir=tmp_path, preselected_raster=corrupt_tif)

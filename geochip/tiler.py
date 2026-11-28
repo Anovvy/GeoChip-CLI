@@ -39,6 +39,44 @@ def list_available_raw_rasters(raw_dir: str | Path = "data/raw") -> list[Path]:
     return sorted(list(dir_path.glob("*.tif")) + list(dir_path.glob("*.tiff")))
 
 
+def get_raster_dimensions(raster_path: str | Path) -> tuple[int, int]:
+    """Read the (width, height) pixel dimensions of a GeoTIFF raster."""
+    import rasterio
+
+    with rasterio.open(str(raster_path)) as src:
+        return int(src.width), int(src.height)
+
+
+def build_chip_size_choices(width: int, height: int) -> tuple[list[dict[str, str]], int, bool]:
+    """Build annotated chip size menu choices, recommended default index, and compatibility flag."""
+    choices: list[dict[str, str]] = []
+    fitting_indices: list[int] = []
+
+    for idx, preset in enumerate(CHIP_SIZES):
+        size = int(preset["size"])
+        n_cols = width // size
+        n_rows = height // size
+        est_chips = n_cols * n_rows
+
+        if est_chips > 0:
+            fitting_indices.append(idx)
+            desc = f"{preset['desc']} | ~{est_chips} max chips ({n_cols}x{n_rows} grid)"
+        else:
+            desc = f"{preset['desc']} | [Too large for {width}x{height} px raster]"
+
+        choices.append({"name": preset["name"], "desc": desc})
+
+    if not fitting_indices:
+        return choices, 0, False
+
+    preferred_idx = next(
+        (idx for idx, preset in enumerate(CHIP_SIZES) if int(preset["size"]) == 640),
+        fitting_indices[-1],
+    )
+    default_index = preferred_idx if preferred_idx in fitting_indices else fitting_indices[-1]
+    return choices, default_index, True
+
+
 def format_raster_to_rgb(data: np.ndarray) -> np.ndarray:
     """Convert raw raster array (C, H, W) into an (H, W, 3) uint8 RGB image."""
     c, h, w = data.shape
@@ -231,9 +269,35 @@ def interactive_chipping_workflow(
         selected_raster = raw_files[raster_idx]
         print_success(f"Selected raster: {selected_raster.name}")
 
-    size_choices = [{"name": s["name"], "desc": s["desc"]} for s in CHIP_SIZES]
-    size_idx = select("Select Chip Tile Size (Pixels):", size_choices, default_index=2)
-    selected_chip_size = CHIP_SIZES[size_idx]["size"]
+    try:
+        width, height = get_raster_dimensions(selected_raster)
+    except Exception as exc:
+        print_error(f"Failed to read raster metadata from '{selected_raster.name}': {exc}")
+        return
+
+    print_info(f"Selected raster dimensions: {width} x {height} px")
+    size_choices, default_idx, has_compatible = build_chip_size_choices(width, height)
+    if not has_compatible:
+        min_size = min(int(s["size"]) for s in CHIP_SIZES)
+        print_warning(
+            f"Raster ({width} x {height} px) is smaller than the smallest chip preset "
+            f"({min_size} x {min_size} px). Consider a larger AOI or higher-resolution dataset "
+            "(e.g. Sentinel-2 10m)."
+        )
+        return
+
+    while True:
+        size_idx = select(
+            "Select Chip Tile Size (Pixels):", size_choices, default_index=default_idx
+        )
+        selected_chip_size = int(CHIP_SIZES[size_idx]["size"])
+        if selected_chip_size <= width and selected_chip_size <= height:
+            break
+        print_warning(
+            f"Chip size {selected_chip_size} x {selected_chip_size} px exceeds raster dimensions "
+            f"({width} x {height} px). Please select a compatible chip size."
+        )
+
     print_success(f"Chip size: {selected_chip_size} x {selected_chip_size} px")
 
     chips_per_task = prompt_number(
