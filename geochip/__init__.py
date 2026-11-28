@@ -5,7 +5,7 @@ Download multi-sensor satellite imagery (Sentinel-2, Landsat 8/9, Sentinel-1 SAR
 generate georeferenced image chips, and upload annotation batches to Roboflow.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 from .auth import init_earth_engine, login_flow, test_all_connections, test_earth_engine_connection
 from .datasets import COMPOSITE_METHODS, DATASETS
