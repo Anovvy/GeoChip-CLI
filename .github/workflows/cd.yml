@@ -73,7 +73,7 @@ jobs:
           config: cliff.toml
           args: --latest --tag ${{ steps.meta.outputs.tag }} --prepend CHANGELOG.md
         env:
-          OUTPUT: CHANGELOG.md
+          OUTPUT: /tmp/git-cliff-latest.md
 
       - name: Extract Current Release Notes
         uses: orhun/git-cliff-action@v4
