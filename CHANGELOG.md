@@ -4,6 +4,26 @@ All notable changes to GeoChip CLI are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [3.1.1] - 2026-11-28
+
+### Bug Fixes
+
+- improve zsh/bin-dir detection and isolate major bumps (21e083a)
+- exit early on incompatible rasters and guard oversized chip selection (7bce067)
+- auto-configure user PATH and install geochip from PyPI (73f9e35)
+
+### Chores
+
+- group GitHub Actions and Python dependency updates (18b7f8c)
+
+### Documentation
+
+- update CHANGELOG.md for v3.0.1 (ab4fdb8)
+
+### Features
+
+- display raster dimensions and chip size compatibility before tiling (3594981)
+
 ## [3.0.1] - 2026-11-28
 
 ### Bug Fixes
