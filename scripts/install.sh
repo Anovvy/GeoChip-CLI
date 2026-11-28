@@ -15,7 +15,9 @@ add_to_path() {
         *)
             export PATH="$target_dir:$PATH"
             local profile_file="$HOME/.profile"
-            if [ -n "${ZSH_VERSION:-}" ] || [ "$(uname -s)" = "Darwin" ]; then
+            local login_shell
+            login_shell="$(basename "${SHELL:-}")"
+            if [ "$login_shell" = "zsh" ] || [ -n "${ZSH_VERSION:-}" ] || [ "$(uname -s)" = "Darwin" ]; then
                 profile_file="$HOME/.zshrc"
             elif [ -f "$HOME/.bashrc" ]; then
                 profile_file="$HOME/.bashrc"
@@ -54,11 +56,12 @@ echo "[OK] Found Python $PY_VER"
 if command -v uv >/dev/null 2>&1; then
     echo "[INFO] Installing GeoChip CLI globally with uv..."
     uv tool install --upgrade "$PACKAGE_NAME"
-    add_to_path "$HOME/.local/bin"
+    UV_BIN_DIR="$(uv tool dir --bin 2>/dev/null || printf '%s' "${XDG_BIN_HOME:-$HOME/.local/bin}")"
+    add_to_path "$UV_BIN_DIR"
 elif command -v pipx >/dev/null 2>&1; then
     echo "[INFO] Installing GeoChip CLI globally with pipx..."
     pipx install --force "$PACKAGE_NAME"
-    add_to_path "$HOME/.local/bin"
+    add_to_path "${PIPX_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
 else
     echo "[INFO] Installing GeoChip CLI from PyPI (pip --user)..."
     "$PYTHON_CMD" -m pip install --user --upgrade "$PACKAGE_NAME"
