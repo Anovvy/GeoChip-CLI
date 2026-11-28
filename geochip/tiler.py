@@ -69,7 +69,11 @@ def build_chip_size_choices(width: int, height: int) -> tuple[list[dict[str, str
     if not fitting_indices:
         return choices, 0, False
 
-    default_index = 2 if 2 in fitting_indices else fitting_indices[-1]
+    preferred_idx = next(
+        (idx for idx, preset in enumerate(CHIP_SIZES) if int(preset["size"]) == 640),
+        fitting_indices[-1],
+    )
+    default_index = preferred_idx if preferred_idx in fitting_indices else fitting_indices[-1]
     return choices, default_index, True
 
 
@@ -280,9 +284,20 @@ def interactive_chipping_workflow(
             f"({min_size} x {min_size} px). Consider a larger AOI or higher-resolution dataset "
             "(e.g. Sentinel-2 10m)."
         )
+        return
 
-    size_idx = select("Select Chip Tile Size (Pixels):", size_choices, default_index=default_idx)
-    selected_chip_size = CHIP_SIZES[size_idx]["size"]
+    while True:
+        size_idx = select(
+            "Select Chip Tile Size (Pixels):", size_choices, default_index=default_idx
+        )
+        selected_chip_size = int(CHIP_SIZES[size_idx]["size"])
+        if selected_chip_size <= width and selected_chip_size <= height:
+            break
+        print_warning(
+            f"Chip size {selected_chip_size} x {selected_chip_size} px exceeds raster dimensions "
+            f"({width} x {height} px). Please select a compatible chip size."
+        )
+
     print_success(f"Chip size: {selected_chip_size} x {selected_chip_size} px")
 
     chips_per_task = prompt_number(

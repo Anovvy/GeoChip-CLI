@@ -9,13 +9,16 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import rasterio
+from rasterio.errors import RasterioIOError
 from rasterio.transform import from_origin
 
 from geochip.tiler import (
     build_chip_size_choices,
     create_single_raster_chips,
     get_raster_dimensions,
+    interactive_chipping_workflow,
 )
 
 
@@ -147,3 +150,42 @@ def test_get_raster_dimensions(tmp_path: Path) -> None:
         dst.write(data)
 
     assert get_raster_dimensions(test_tif) == (302, 140)
+
+
+def test_get_raster_dimensions_missing_file_raises(tmp_path: Path) -> None:
+    """Missing or unreadable raster paths raise RasterioIOError."""
+    with pytest.raises(RasterioIOError):
+        get_raster_dimensions(tmp_path / "does_not_exist.tif")
+
+
+def test_interactive_chipping_workflow_aborts_on_incompatible_or_corrupt_raster(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Incompatible or corrupt rasters exit cleanly without prompting for chip/batch options."""
+
+    def fail_if_prompted(*args: object, **kwargs: object) -> int:
+        raise AssertionError("Interactive prompt should not be called on incompatible rasters")
+
+    monkeypatch.setattr("geochip.tiler.select", fail_if_prompted)
+    monkeypatch.setattr("geochip.tiler.prompt_number", fail_if_prompted)
+
+    small_tif = tmp_path / "too_small.tif"
+    data = np.full((1, 140, 302), 100, dtype=np.uint8)
+    with rasterio.open(
+        str(small_tif),
+        "w",
+        driver="GTiff",
+        height=140,
+        width=302,
+        count=1,
+        dtype=np.uint8,
+        crs="EPSG:4326",
+        transform=from_origin(107.74, -6.55, 0.00027, 0.00027),
+    ) as dst:
+        dst.write(data)
+
+    interactive_chipping_workflow(work_dir=tmp_path, preselected_raster=small_tif)
+
+    corrupt_tif = tmp_path / "corrupt.tif"
+    corrupt_tif.write_bytes(b"not a valid geotiff")
+    interactive_chipping_workflow(work_dir=tmp_path, preselected_raster=corrupt_tif)
