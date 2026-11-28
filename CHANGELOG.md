@@ -4,6 +4,13 @@ All notable changes to GeoChip CLI are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [3.0.1] - 2026-11-28
+
+### Bug Fixes
+
+- separate git-cliff OUTPUT path from CHANGELOG prepend target (4ca4996)
+- prepend latest release to CHANGELOG and filter style commits (aab0d8f)
+
 ## [3.0.0] - 2026-11-26
 
 ### Features
