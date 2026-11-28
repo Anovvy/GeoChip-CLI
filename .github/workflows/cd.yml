@@ -40,6 +40,16 @@ jobs:
             echo "Version mismatch: pyproject.toml=$PKG_VER vs tag=$TAG_VER"
             exit 1
           fi
+          INIT_VER=$(python3 -c 'import re; m = re.search(r"__version__\s*=\s*\"([^\"]+)\"", open("geochip/__init__.py", encoding="utf-8").read()); print(m.group(1) if m else "")')
+          if [ "$INIT_VER" != "$TAG_VER" ]; then
+            echo "Version mismatch: geochip/__init__.py=$INIT_VER vs tag=$TAG_VER"
+            exit 1
+          fi
+          if grep -Fq "## [${TAG_VER}]" CHANGELOG.md; then
+            echo "changelog_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changelog_exists=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
@@ -56,11 +66,12 @@ jobs:
           twine check dist/*
           sha256sum dist/* > SHA256SUMS.txt
 
-      - name: Generate Release Notes & Update CHANGELOG.md
+      - name: Prepend Latest Release to CHANGELOG.md
+        if: steps.meta.outputs.changelog_exists == 'false'
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --tag ${{ steps.meta.outputs.tag }} --output CHANGELOG.md
+          args: --latest --tag ${{ steps.meta.outputs.tag }} --prepend CHANGELOG.md
         env:
           OUTPUT: CHANGELOG.md
 
@@ -128,6 +139,7 @@ jobs:
     name: Promote Canary to Production Release
     needs: [build-and-changelog, canary-release]
     runs-on: ubuntu-latest
+    # Requires GitHub repository Settings > Environments > production > Required reviewers for manual approval gate
     environment: production
     permissions:
       contents: write
